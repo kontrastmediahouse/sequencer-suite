@@ -1,0 +1,58 @@
+name: Build Sequencer Suite (macOS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      archs:
+        description: "Architectures (arm64;x86_64 = universal, arm64 = Apple Silicon only, faster)"
+        default: "arm64"
+        required: true
+      only:
+        description: "Build only these folders (blank = all), e.g. Bumblebee TGB420"
+        default: ""
+        required: false
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          cmake --version
+          xcodebuild -version
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: JUCE
+          key: juce-8.0.4
+
+      - name: Build all plug-ins + DMG
+        env:
+          ARCHS: ${{ github.event.inputs.archs || 'arm64' }}
+          ONLY: ${{ github.event.inputs.only }}
+          SUITE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '1.0.0' }}
+        run: |
+          chmod +x build_all_installer.sh
+          ./build_all_installer.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sequencer-Suite-macOS
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
