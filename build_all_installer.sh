@@ -100,7 +100,8 @@ for entry in "${PLUGINS[@]}"; do
   pkgbuild --analyze --root "$S" "$PLIST"
   n=0
   while /usr/libexec/PlistBuddy -c "Print :$n" "$PLIST" >/dev/null 2>&1; do
-    /usr/libexec/PlistBuddy -c "Set :$n:BundleIsRelocatable false" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Delete :$n:BundleIsRelocatable" "$PLIST" >/dev/null 2>&1 || true
+    /usr/libexec/PlistBuddy -c "Add :$n:BundleIsRelocatable bool false" "$PLIST"
     n=$((n + 1))
   done
   VERSION="$(grep -Eo 'project\([A-Za-z0-9_]+ VERSION [0-9.]+' "$ROOT/$DIR/CMakeLists.txt" | awk '{print $3}')"
@@ -164,7 +165,11 @@ EOF
 
 DMG="$DIST/Sequencer-Suite-$SUITE_VERSION.dmg"
 rm -f "$DMG"
-hdiutil create -volname "Sequencer Suite $SUITE_VERSION" -srcfolder "$DMG_DIR" -fs HFS+ -format UDZO -ov "$DMG"
+for try in 1 2 3; do   # hdiutil is sometimes "busy" on CI machines; retry
+  hdiutil create -volname "Sequencer Suite $SUITE_VERSION" -srcfolder "$DMG_DIR" -fs HFS+ -format UDZO -ov "$DMG" && break
+  [ "$try" = 3 ] && exit 1
+  echo "hdiutil failed, retrying in 10 s"; sleep 10
+done
 if [ -n "${DEV_ID_APP:-}" ]; then codesign --force --timestamp -s "$DEV_ID_APP" "$DMG"; fi
 
 if [ -n "${NOTARY_PROFILE:-}" ] && [ -n "${DEV_ID_INSTALLER:-}" ]; then
